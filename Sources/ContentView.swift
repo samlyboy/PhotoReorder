@@ -319,7 +319,7 @@ struct ContentView: View {
                          ? "倒序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递减）"
                          : "正序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递增）")
                     Text("编号 1 = 第 \(start) 个（「起」那格），编号 \(amount) = 第 \(end) 个（「止」那格）")
-                    if hasBothKinds(in: start, end) {
+                    if hasBothKinds(in: start, end: end) {
                         Text("图文混排：编号按交错后的最终位置定，所以网格里的数字不会严格 1、2、3 连排")
                     }
                 }
