@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 
-@MainActor
 final class ReorderRunner: ObservableObject {
     @Published var isRunning = false
     @Published var status = ""
@@ -10,6 +9,7 @@ final class ReorderRunner: ObservableObject {
     @Published var alertMessage = ""
     @Published var showAlert = false
 
+    @MainActor
     func run(plan: ReorderPlan) async {
         guard !isRunning else { return }
         isRunning = true

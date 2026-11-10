@@ -60,7 +60,7 @@ struct ContentView: View {
                 .padding(16)
                 .padding(.bottom, 90)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("相册重排")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) { bottomBar }
@@ -84,7 +84,7 @@ struct ContentView: View {
                 selection: $pickerItems,
                 maxSelectionCount: 0,
                 matching: .any(of: [.images, .videos]),
-                photoLibrary: .shared()
+                photoLibrary: PHPhotoLibrary.shared()
             ) {
                 Label(items.isEmpty ? "选择图片和视频" : "重新选择素材",
                       systemImage: "photo.on.rectangle.angled")
@@ -127,7 +127,7 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - 网格
@@ -168,7 +168,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                Color(.secondarySystemFill)
+                Color(uiColor: .secondarySystemFill)
                 ProgressView().scaleEffect(0.7)
             }
         }
@@ -233,7 +233,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func numberField(title: String, text: Binding<String>) -> some View {
@@ -246,7 +246,7 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .frame(width: 58)
                 .padding(.vertical, 9)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
+                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
         }
     }
 
@@ -275,7 +275,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var directionSection: some View {
@@ -287,7 +287,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - 底部按钮

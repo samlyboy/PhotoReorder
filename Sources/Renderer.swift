@@ -147,7 +147,7 @@ enum Renderer {
 
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
-            output,
+            output as CFMutableData,
             UTType.jpeg.identifier as CFString,
             1,
             nil
