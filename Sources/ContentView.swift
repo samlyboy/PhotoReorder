@@ -316,9 +316,9 @@ struct ContentView: View {
                 let isReverse = start > end
                 VStack(alignment: .leading, spacing: 4) {
                     Text(isReverse
-                         ? "倒序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递减）"
-                         : "正序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递增）")
-                    Text("编号 1 = 第 \(start) 个（「起」那格），编号 \(amount) = 第 \(end) 个（「止」那格）")
+                         ? "倒序：从第 \(start) 个往第 \(end) 个走，共 \(amount) 个"
+                         : "正序：从第 \(start) 个往第 \(end) 个走，共 \(amount) 个")
+                    Text("编号从「起」那格开始、朝「止」的方向每格 +1：编号 1 = 第 \(start) 个，编号 \(amount) = 第 \(end) 个")
                     if hasBothKinds(in: start, end: end) {
                         Text("图文混排：编号按交错后的最终位置定，所以网格里的数字不会严格 1、2、3 连排")
                     }
@@ -374,8 +374,8 @@ struct ContentView: View {
 
                 let amount = plan.entries.count
                 Text(start <= end
-                     ? "正序：第 \(start) 个排最前（编号 1），第 \(end) 个排最后（编号 \(amount)）"
-                     : "倒序：第 \(start) 个排最前（编号 1），第 \(end) 个排最后（编号 \(amount)），第 \(start) 个在网格靠前、编号却最大")
+                     ? "正序：编号 1 给第 \(start) 个、排最前；编号 \(amount) 给第 \(end) 个、排最后"
+                     : "倒序：编号 1 给第 \(start) 个、排最前；编号 \(amount) 给第 \(end) 个、排最后（第 \(start) 个在网格里靠后，编号反而最小）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
