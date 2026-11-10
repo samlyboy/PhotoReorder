@@ -194,13 +194,40 @@ struct ContentView: View {
 
     private func toggle(_ index: Int) {
         guard items.indices.contains(index) else { return }
+        let oldCount = selectedCount
+        let oldStart = Int(startText)
+        let oldEnd = Int(endText)
+
         items[index].isSelected.toggle()
-        clampRange()
+        let newCount = selectedCount
+
+        // 区间原本覆盖全部已选 → 跟着点选一起伸缩，新点的格子立刻拿到编号
+        if oldCount > 0, let s = oldStart, let e = oldEnd, s == 1, e == oldCount {
+            startText = "1"
+            endText = "\(newCount)"
+        } else if oldCount > 0, let s = oldStart, let e = oldEnd, s == oldCount, e == 1 {
+            startText = "\(newCount)"
+            endText = "1"
+        } else {
+            clampRange()
+        }
+
+        if newCount == 0 {
+            startText = "1"
+            endText = ""
+        }
     }
 
     private func selectAll() {
+        let wasReverse = (Int(startText) ?? 1) > (Int(endText) ?? 1)
         for index in items.indices { items[index].isSelected = true }
-        clampRange()
+        if wasReverse {
+            startText = "\(selectedCount)"
+            endText = "1"
+        } else {
+            startText = "1"
+            endText = "\(selectedCount)"
+        }
     }
 
     /// 起止数字跟着「已选数量」收口，避免取消选取后还停在不存在的序号上
@@ -305,8 +332,9 @@ struct ContentView: View {
                 numberField(title: "起", text: $startText)
                 numberField(title: "止", text: $endText)
                 Button("全部") {
-                    startText = "1"
-                    endText = "\(selectedCount)"
+                    let reverse = (Int(startText) ?? 1) > (Int(endText) ?? 1)
+                    startText = reverse ? "\(selectedCount)" : "1"
+                    endText = reverse ? "1" : "\(selectedCount)"
                 }
                 .buttonStyle(.bordered)
             }
@@ -379,10 +407,6 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                Text("编号 1 的时间最新，相册从上往下读就是 1 → \(amount)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             } else {
                 Text("先填写有效的起止数字")
                     .font(.footnote)
