@@ -7,8 +7,9 @@ struct ContentView: View {
     @State private var items: [MediaItem] = []
     @State private var startText = "1"
     @State private var endText = ""
-    @State private var newestFirst = true
     @State private var isLoadingThumbs = false
+    /// 每次清空 / 重新选片都 +1，用来作废还在跑的缩略图加载（否则清空后会被旧任务写回来）
+    @State private var loadGeneration = 0
     @StateObject private var runner = ReorderRunner()
 
     // MARK: - 计算属性
@@ -23,19 +24,9 @@ struct ContentView: View {
         return (value >= 1 && value <= items.count) ? value : nil
     }
 
-    private var selectedRange: ClosedRange<Int>? {
-        guard let start = startValue, let end = endValue, start <= end else { return nil }
-        return start...end
-    }
-
     private var plan: ReorderPlan? {
-        guard let range = selectedRange else { return nil }
-        return ReorderPlanner.makePlan(
-            items: items,
-            range: range,
-            newestFirst: newestFirst,
-            now: Date()
-        )
+        guard !items.isEmpty, let start = startValue, let end = endValue else { return nil }
+        return ReorderPlanner.makePlan(items: items, start: start, end: end, now: Date())
     }
 
     private var imageCount: Int { items.filter { $0.kind == .image }.count }
@@ -54,7 +45,6 @@ struct ContentView: View {
                         gridSection
                         rangeSection
                         orderSection
-                        directionSection
                     }
                 }
                 .padding(16)
@@ -76,7 +66,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 选片
+    // MARK: - 选片 / 清空
 
     private var pickerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -96,18 +86,22 @@ struct ContentView: View {
             }
 
             if !items.isEmpty {
-                HStack(spacing: 14) {
+                HStack(spacing: 12) {
                     Text("共 \(items.count) 个")
                     Text("图片 \(imageCount)")
                     Text("视频 \(videoCount)")
-                    Spacer()
-                    Button("清空") {
-                        pickerItems = []
-                        items = []
-                        startText = "1"
-                        endText = ""
+                    Spacer(minLength: 8)
+                    Button {
+                        clearAll()
+                    } label: {
+                        Text("清空")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
                     }
-                    .font(.footnote)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.accentColor)
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -115,11 +109,21 @@ struct ContentView: View {
         }
     }
 
+    /// 清空一切：取消相册选择、清掉网格、复位起止
+    private func clearAll() {
+        loadGeneration &+= 1
+        isLoadingThumbs = false
+        pickerItems = []
+        items = []
+        startText = "1"
+        endText = ""
+    }
+
     private var emptyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("怎么用").font(.headline)
             Text("1. 点上面的按钮，一次勾选要处理的图片和视频（不乱也行，程序会按相册时间排序）")
-            Text("2. 用「起 / 止」两个数字圈出这一段要参与重排的素材")
+            Text("2. 用「起 / 止」两个数字圈出这一段要参与重排的素材；起 > 止 表示倒序编号")
             Text("3. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带序号")
             Text("4. 原片不动，新文件进系统相册「最近项目」")
         }
@@ -157,8 +161,9 @@ struct ContentView: View {
     }
 
     private func isInRange(_ index: Int) -> Bool {
-        guard let range = selectedRange else { return false }
-        return range.contains(index + 1)
+        guard let start = startValue, let end = endValue else { return false }
+        let number = index + 1
+        return number >= min(start, end) && number <= max(start, end)
     }
 
     private func thumbCell(index: Int, item: MediaItem) -> some View {
@@ -221,12 +226,19 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
             }
 
-            if let range = selectedRange {
-                Text("将处理第 \(range.lowerBound) ~ \(range.upperBound) 个，共 \(range.count) 个素材")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if let start = startValue, let end = endValue {
+                let amount = abs(start - end) + 1
+                if start <= end {
+                    Text("正序：第 \(start) ~ \(end) 个，共 \(amount) 个，编号 1 从原第 \(start) 个开始")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("倒序：第 \(start) → \(end) 个，共 \(amount) 个；原第 \(start) 个编号 1，原第 \(end) 个编号 \(amount)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                Text("起止数字要在 1 ~ \(items.count) 之间，且「起」不能大于「止」")
+                Text("起止数字都要在 1 ~ \(items.count) 之间（起 > 止 就是倒序编号）")
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
@@ -262,9 +274,7 @@ struct ContentView: View {
                     .font(.subheadline.monospacedDigit())
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(newestFirst
-                     ? "编号 1 的时间最新，相册从上往下读就是 1 → N"
-                     : "编号 1 的时间最旧，相册最下方读起才是 1 → N")
+                Text("编号 1 的时间最新，相册从上往下读就是 1 → N")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
@@ -272,18 +282,6 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var directionSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("编号 1 排在相册最上方（最新）", isOn: $newestFirst)
-            Text("相册默认最新在前。开启时按 新 → 旧 写时间戳；如果发现顺序整体反了，关掉这个开关再跑一遍。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -335,6 +333,10 @@ struct ContentView: View {
 
     @MainActor
     private func reload(_ picked: [PhotosPickerItem]) async {
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        isLoadingThumbs = false
+
         let ids = picked.compactMap { $0.itemIdentifier }
         guard !ids.isEmpty else {
             items = []
@@ -345,20 +347,25 @@ struct ContentView: View {
 
         isLoadingThumbs = true
         var loaded = LibraryService.fetchItems(ids: ids)
+        guard generation == loadGeneration else { return }
+
         items = loaded
         startText = "1"
         endText = "\(loaded.count)"
 
         for index in loaded.indices {
-            guard index < loaded.count else { break }
+            guard generation == loadGeneration else { return }
             if let thumb = await LibraryService.thumbnail(
                 for: loaded[index].id,
                 size: CGSize(width: 320, height: 320)
             ) {
+                guard generation == loadGeneration else { return }
                 loaded[index].thumb = thumb
                 items = loaded
             }
         }
+
+        guard generation == loadGeneration else { return }
         isLoadingThumbs = false
     }
 }
