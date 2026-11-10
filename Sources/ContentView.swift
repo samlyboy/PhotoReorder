@@ -35,7 +35,7 @@ struct ContentView: View {
         return ReorderPlanner.makePlan(items: selectedItems, start: start, end: end, now: Date())
     }
 
-    /// item.id → 最终编号（烧进画面的那个号，也是相册里的位置）
+    /// item.id → 编号（烧进画面的那个号）。按「起 → 止」的位次 1…M 连排，与图视交替无关
     private var numberMap: [String: Int] {
         guard let plan = plan else { return [:] }
         var map: [String: Int] = [:]
@@ -142,7 +142,7 @@ struct ContentView: View {
             Text("1. 点上面的按钮，一次勾选要处理的图片和视频（不乱也行，程序会按相册时间排序）")
             Text("2. 网格里点某个格子可以取消 / 恢复它，没选中的不参与本次重排")
             Text("3. 用「起 / 止」两个数字圈出这一段；起 > 止 就是倒序（起 9 止 1 → 左上编号 9、右下编号 1）")
-            Text("4. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带最终编号")
+            Text("4. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带编号")
             Text("5. 原片不动，新文件进系统相册「最近项目」")
         }
         .font(.footnote)
@@ -157,7 +157,7 @@ struct ContentView: View {
     private var gridSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("素材 · 左上小字=原始序号，右上大字=最终编号")
+                Text("素材 · 左上小字=原始序号，右上红字=编号")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -348,7 +348,7 @@ struct ContentView: View {
                          : "正序：从第 \(start) 个往第 \(end) 个走，共 \(amount) 个")
                     Text("编号从「起」那格开始、朝「止」的方向每格 +1：编号 1 = 第 \(start) 个，编号 \(amount) = 第 \(end) 个")
                     if hasBothKinds(in: start, end: end) {
-                        Text("图文混排：编号按交错后的最终位置定，所以网格里的数字不会严格 1、2、3 连排")
+                        Text("图文混排：编号在网格里是 1、2、3… 连排的；相册里的先后按 图1 视1 图2 视2 交替，所以号在相册里会跳着出现")
                     }
                 }
                 .font(.footnote)
@@ -395,9 +395,14 @@ struct ContentView: View {
             Text("重排后的顺序").font(.headline)
 
             if let plan = plan, !plan.entries.isEmpty, let start = startValue, let end = endValue {
-                Text((["分隔图"] + plan.entries.map { "\($0.number)·\($0.item.kind.short)" })
+                Text("相册顺序：" + (["分隔图"] + plan.entries.enumerated().map { "\($0.offset + 1)·\($0.element.item.kind.short)" })
                     .joined(separator: " → "))
                     .font(.subheadline.monospacedDigit())
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("上面是相册里从上往下的先后（图、视交替）；每个素材烧进画面的编号见网格右上角，是 1、2、3… 连排的另一套号")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 let amount = plan.entries.count

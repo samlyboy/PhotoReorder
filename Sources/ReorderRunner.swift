@@ -43,8 +43,8 @@ final class ReorderRunner: ObservableObject {
         done += 1
         fraction = done / total
 
-        for entry in plan.entries {
-            status = "处理中 \(entry.number) / \(plan.entries.count)（\(entry.item.kind.short)）"
+        for (index, entry) in plan.entries.enumerated() {
+            status = "处理中 \(index + 1) / \(plan.entries.count)（编号 \(entry.number) · \(entry.item.kind.short)）"
             do {
                 switch entry.item.kind {
                 case .image:
