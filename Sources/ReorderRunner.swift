@@ -10,7 +10,7 @@ final class ReorderRunner: ObservableObject {
     @Published var showAlert = false
 
     @MainActor
-    func run(plan: ReorderPlan) async {
+    func run(plan: ReorderPlan, trimSeconds: Double = 0) async {
         guard !isRunning else { return }
         isRunning = true
         fraction = 0
@@ -44,7 +44,10 @@ final class ReorderRunner: ObservableObject {
         fraction = done / total
 
         for (index, entry) in plan.entries.enumerated() {
-            status = "处理中 \(index + 1) / \(plan.entries.count)（编号 \(entry.number) · \(entry.item.kind.short)）"
+            let trimNote = entry.item.kind == .video && trimSeconds > 0
+                ? " · 裁头 \(String(format: "%.2f", trimSeconds))s"
+                : ""
+            status = "处理中 \(index + 1) / \(plan.entries.count)（编号 \(entry.number) · \(entry.item.kind.short)\(trimNote)）"
             do {
                 switch entry.item.kind {
                 case .image:
@@ -66,7 +69,12 @@ final class ReorderRunner: ObservableObject {
                     let tmp = FileManager.default.temporaryDirectory
                         .appendingPathComponent("reorder_\(entry.number)_\(UUID().uuidString).mp4")
                     defer { try? FileManager.default.removeItem(at: tmp) }
-                    try await VideoBadger.export(asset: asset, number: entry.number, to: tmp)
+                    try await VideoBadger.export(
+                        asset: asset,
+                        number: entry.number,
+                        trimSeconds: trimSeconds,
+                        to: tmp
+                    )
                     try await LibraryService.saveVideo(
                         fileURL: tmp,
                         creationDate: entry.date,

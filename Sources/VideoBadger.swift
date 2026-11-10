@@ -4,10 +4,11 @@ import CoreImage
 import CoreGraphics
 import UIKit
 
-/// 给视频右上角烧数字角标（必须重编码）
+/// 给视频右上角烧数字角标 + 裁掉开头 N 秒（必须重编码，一次导出两件事一起做）
 enum VideoBadger {
 
-    static func export(asset: AVAsset, number: Int, to outputURL: URL) async throws {
+    /// - Parameter trimSeconds: 裁掉开头多少秒；0 = 不裁。视频太短（剩余不足 0.3 秒）时自动不裁。
+    static func export(asset: AVAsset, number: Int, trimSeconds: Double, to outputURL: URL) async throws {
         let videoTracks = asset.tracks(withMediaType: .video)
         guard let sourceVideo = videoTracks.first else {
             throw LibraryError.noVideoTrack
@@ -17,7 +18,12 @@ enum VideoBadger {
         guard duration.isValid, duration.seconds > 0 else {
             throw LibraryError.exportFailed("视频时长为 0")
         }
-        let range = CMTimeRange(start: .zero, duration: duration)
+
+        // 裁头：剩余时长不足 0.3 秒就不裁（避免切出空视频）
+        var trim = max(0, trimSeconds)
+        if trim > 0 && duration.seconds - trim < 0.3 { trim = 0 }
+        let start = CMTime(seconds: trim, preferredTimescale: 600)
+        let range = CMTimeRange(start: start, end: duration)
 
         let composition = AVMutableComposition()
         guard let videoTrack = composition.addMutableTrack(
@@ -79,7 +85,8 @@ enum VideoBadger {
         session.outputFileType = .mp4
         session.videoComposition = videoComposition
         session.shouldOptimizeForNetworkUse = false
-        session.timeRange = range
+        // composition 里已经从 .zero 起插入（已裁掉开头），导出整段即可
+        session.timeRange = CMTimeRange(start: .zero, duration: range.duration)
 
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             session.exportAsynchronously {

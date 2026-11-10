@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var items: [MediaItem] = []
     @State private var startText = "1"
     @State private var endText = ""
+    /// 视频裁头秒数（默认 0.05，只作用于视频，不影响图片）
+    @State private var trimText = "0.05"
     @State private var isLoadingThumbs = false
     /// 每次清空 / 重新选片都 +1，用来作废还在跑的缩略图加载（否则清空后会被旧任务写回来）
     @State private var loadGeneration = 0
@@ -47,6 +49,16 @@ struct ContentView: View {
     private var imageCount: Int { selectedItems.filter { $0.kind == .image }.count }
     private var videoCount: Int { selectedItems.filter { $0.kind == .video }.count }
 
+    /// 裁头秒数：非法输入回退 0.05，范围夹在 0 ~ 10 秒
+    private var trimValue: Double {
+        let raw = trimText
+            .replacingOccurrences(of: "，", with: ".")
+            .replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespaces)
+        guard let value = Double(raw), value.isFinite else { return 0.05 }
+        return min(max(value, 0), 10)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -59,6 +71,7 @@ struct ContentView: View {
                     } else {
                         gridSection
                         rangeSection
+                        if videoCount > 0 { trimSection }
                         orderSection
                     }
                 }
@@ -142,8 +155,9 @@ struct ContentView: View {
             Text("1. 点上面的按钮，一次勾选要处理的图片和视频（不乱也行，程序会按相册时间排序）")
             Text("2. 网格里点某个格子可以取消 / 恢复它，没选中的不参与本次重排")
             Text("3. 用「起 / 止」两个数字圈出这一段；起 > 止 就是倒序（起 9 止 1 → 左上编号 9、右下编号 1）")
-            Text("4. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带编号")
-            Text("5. 原片不动，新文件进系统相册「最近项目」")
+            Text("4. 视频默认先裁掉开头 0.05 秒（可在「视频裁头」改，填 0 就不裁），再烧编号写入相册；图片不裁")
+            Text("5. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带编号")
+            Text("6. 原片一条不动，新文件进系统相册「最近项目」")
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
@@ -366,6 +380,51 @@ struct ContentView: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    // MARK: - 视频裁头
+
+    private var trimSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("视频裁头").font(.headline)
+                Spacer(minLength: 6)
+                Text("只影响视频").font(.caption).foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                TextField("0.05", text: $trimText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 76)
+                    .padding(.vertical, 9)
+                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
+                Text("秒").font(.footnote).foregroundStyle(.secondary)
+                Spacer(minLength: 6)
+                Button("恢复 0.05") { trimText = "0.05" }
+                    .buttonStyle(.bordered)
+            }
+
+            Text(trimValue > 0
+                 ? "每个视频在烧编号前先裁掉开头 \(formatSeconds(trimValue)) 秒，再写入相册；图片不受影响，原视频一条不删。默认 0.05 秒就是解决微信转发黑封面的那个值。"
+                 : "填 0 = 不裁头，视频只烧编号直接写入。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if trimValue > 0 {
+                Text("裁头与烧号在同一次重编码里完成，只压一次画质")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func formatSeconds(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
     private func hasBothKinds(in start: Int, end: Int) -> Bool {
         let lower = min(start, end)
         let upper = max(start, end)
@@ -437,7 +496,12 @@ struct ContentView: View {
             Divider()
             Button {
                 guard let plan = plan else { return }
-                Task { await runner.run(plan: plan) }
+                Task {
+                    await runner.run(
+                        plan: plan,
+                        trimSeconds: videoCount > 0 ? trimValue : 0
+                    )
+                }
             } label: {
                 Text(bottomTitle)
                     .font(.headline)
@@ -462,7 +526,9 @@ struct ContentView: View {
                 Text(runner.status)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("视频需要重编码，会比较慢，别锁屏")
+                Text(videoCount > 0 && trimValue > 0
+                     ? "视频要重编码（裁头 + 烧号），会比较慢，别锁屏"
+                     : "视频需要重编码，会比较慢，别锁屏")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
