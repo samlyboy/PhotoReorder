@@ -35,14 +35,17 @@ jobs:
 
       - name: Package ipa
         run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Build/Products/Release-iphoneos/PhotoReorder.app/Info.plist)
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" build/Build/Products/Release-iphoneos/PhotoReorder.app/Info.plist)
+          echo "IPA_VERSION=${VERSION}" >> "$GITHUB_ENV"
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/PhotoReorder.app Payload/
-          zip -qry PhotoReorder.ipa Payload
-          ls -lh PhotoReorder.ipa
+          zip -qry "PhotoReorder-v${VERSION}-b${BUILD}.ipa" Payload
+          ls -lh PhotoReorder-v*.ipa
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Payload/PhotoReorder.app/Info.plist
 
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoReorder-ipa
-          path: PhotoReorder.ipa
+          path: PhotoReorder-v*.ipa
           retention-days: 90

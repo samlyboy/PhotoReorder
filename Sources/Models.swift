@@ -27,6 +27,8 @@ struct MediaItem: Identifiable {
     var thumb: UIImage?
     var pixelSize: CGSize
     var duration: TimeInterval
+    /// 是否参与本次重排；网格里点一下格子即可切换
+    var isSelected: Bool = true
 }
 
 struct PlanEntry: Identifiable {

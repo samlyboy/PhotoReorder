@@ -12,25 +12,40 @@ struct ContentView: View {
     @State private var loadGeneration = 0
     @StateObject private var runner = ReorderRunner()
 
+    private let cellCorner: CGFloat = 8
+
     // MARK: - 计算属性
+
+    /// 已选中的素材（点格子可取消/恢复），起止编号都在这个序列上数
+    private var selectedItems: [MediaItem] { items.filter(\.isSelected) }
+    private var selectedCount: Int { selectedItems.count }
 
     private var startValue: Int? {
         guard let value = Int(startText.trimmingCharacters(in: .whitespaces)) else { return nil }
-        return (value >= 1 && value <= items.count) ? value : nil
+        return (value >= 1 && value <= selectedCount) ? value : nil
     }
 
     private var endValue: Int? {
         guard let value = Int(endText.trimmingCharacters(in: .whitespaces)) else { return nil }
-        return (value >= 1 && value <= items.count) ? value : nil
+        return (value >= 1 && value <= selectedCount) ? value : nil
     }
 
     private var plan: ReorderPlan? {
-        guard !items.isEmpty, let start = startValue, let end = endValue else { return nil }
-        return ReorderPlanner.makePlan(items: items, start: start, end: end, now: Date())
+        guard let start = startValue, let end = endValue else { return nil }
+        return ReorderPlanner.makePlan(items: selectedItems, start: start, end: end, now: Date())
     }
 
-    private var imageCount: Int { items.filter { $0.kind == .image }.count }
-    private var videoCount: Int { items.filter { $0.kind == .video }.count }
+    /// item.id → 最终编号（烧进画面的那个号，也是相册里的位置）
+    private var numberMap: [String: Int] {
+        guard let plan = plan else { return [:] }
+        var map: [String: Int] = [:]
+        map.reserveCapacity(plan.entries.count)
+        for entry in plan.entries { map[entry.item.id] = entry.number }
+        return map
+    }
+
+    private var imageCount: Int { selectedItems.filter { $0.kind == .image }.count }
+    private var videoCount: Int { selectedItems.filter { $0.kind == .video }.count }
 
     // MARK: - Body
 
@@ -86,11 +101,13 @@ struct ContentView: View {
             }
 
             if !items.isEmpty {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Text("共 \(items.count) 个")
-                    Text("图片 \(imageCount)")
-                    Text("视频 \(videoCount)")
-                    Spacer(minLength: 8)
+                    Text("已选 \(selectedCount)")
+                        .foregroundStyle(selectedCount == items.count ? Color.secondary : Color.accentColor)
+                    Text("图 \(imageCount)")
+                    Text("视 \(videoCount)")
+                    Spacer(minLength: 6)
                     Button {
                         clearAll()
                     } label: {
@@ -123,9 +140,10 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("怎么用").font(.headline)
             Text("1. 点上面的按钮，一次勾选要处理的图片和视频（不乱也行，程序会按相册时间排序）")
-            Text("2. 用「起 / 止」两个数字圈出这一段要参与重排的素材；起 > 止 表示倒序编号")
-            Text("3. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带序号")
-            Text("4. 原片不动，新文件进系统相册「最近项目」")
+            Text("2. 网格里点某个格子可以取消 / 恢复它，没选中的不参与本次重排")
+            Text("3. 用「起 / 止」两个数字圈出这一段；起 > 止 就是倒序（起 9 止 1 → 左上编号 9、右下编号 1）")
+            Text("4. 点底部「重新排列」：先写一张红色分隔图进相册，再按 图1 视1 图2 视2… 的顺序批量写入新文件，每张右上角带最终编号")
+            Text("5. 原片不动，新文件进系统相册「最近项目」")
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
@@ -138,9 +156,19 @@ struct ContentView: View {
 
     private var gridSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("素材 · 左上角是原始序号（按相册时间排序）")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("素材 · 左上小字=原始序号，右上大字=最终编号")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if selectedCount < items.count {
+                    Button("全选") { selectAll() }
+                        .font(.footnote.weight(.medium))
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
@@ -151,6 +179,10 @@ struct ContentView: View {
                 }
             }
 
+            Text("点一下格子＝取消选取，再点一下＝恢复")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
             if isLoadingThumbs {
                 HStack(spacing: 6) {
                     ProgressView().scaleEffect(0.7)
@@ -160,54 +192,107 @@ struct ContentView: View {
         }
     }
 
-    private func isInRange(_ index: Int) -> Bool {
-        guard let start = startValue, let end = endValue else { return false }
-        let number = index + 1
-        return number >= min(start, end) && number <= max(start, end)
+    private func toggle(_ index: Int) {
+        guard items.indices.contains(index) else { return }
+        items[index].isSelected.toggle()
+        clampRange()
+    }
+
+    private func selectAll() {
+        for index in items.indices { items[index].isSelected = true }
+        clampRange()
+    }
+
+    /// 起止数字跟着「已选数量」收口，避免取消选取后还停在不存在的序号上
+    private func clampRange() {
+        let maxValue = selectedCount
+        guard maxValue > 0 else {
+            startText = "1"
+            endText = ""
+            return
+        }
+        if let value = Int(startText), value > maxValue { startText = "\(maxValue)" }
+        if let value = Int(endText), value > maxValue { endText = "\(maxValue)" }
+        if Int(startText) == nil { startText = "1" }
+        if Int(endText) == nil { endText = "\(maxValue)" }
     }
 
     private func thumbCell(index: Int, item: MediaItem) -> some View {
-        ZStack {
-            if let thumb = item.thumb {
-                Image(uiImage: thumb)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Color(uiColor: .secondarySystemFill)
-                ProgressView().scaleEffect(0.7)
+        let shape = RoundedRectangle(cornerRadius: cellCorner, style: .continuous)
+        let number = numberMap[item.id]
+        let selected = item.isSelected
+        let dim: Double = selected ? (number == nil ? 0.45 : 0) : 0.66
+
+        return Color(uiColor: .secondarySystemFill)
+            // 尺寸只由色块决定，缩略图绝不参与布局（否则横屏视频会把格子撑爆）
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                GeometryReader { geo in
+                    if let thumb = item.thumb {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    } else {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 104)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(alignment: .topLeading) {
-            Text("\(index + 1)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.black.opacity(0.62), in: Capsule())
-                .padding(5)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Image(systemName: item.kind.systemImage)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(4)
-                .background(Color.black.opacity(0.55), in: Circle())
-                .padding(5)
-        }
-        .overlay {
-            if !isInRange(index) {
-                RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.55))
+            .clipShape(shape)
+            .overlay { shape.fill(Color.black.opacity(dim)) }
+            .overlay(alignment: .topLeading) {
+                Text("\(index + 1)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.black.opacity(0.62), in: Capsule())
+                    .padding(4)
+                    .opacity(selected ? 1 : 0.7)
             }
-        }
-        .overlay {
-            if isInRange(index) {
-                RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2.5)
+            .overlay(alignment: .topTrailing) {
+                if let finalNumber = number {
+                    Text("\(finalNumber)")
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color(red: 1, green: 0.90, blue: 0.0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 26, minHeight: 26)
+                        .background(Color(red: 0.76, green: 0.06, blue: 0.06), in: Capsule())
+                        .overlay { Capsule().stroke(Color.white, lineWidth: 1.5) }
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                        .padding(4)
+                }
             }
-        }
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: item.kind.systemImage)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .background(Color.black.opacity(0.55), in: Circle())
+                    .padding(4)
+                    .opacity(selected ? 1 : 0.75)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !selected {
+                    Image(systemName: "slash.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .padding(4)
+                }
+            }
+            .overlay {
+                if selected {
+                    shape.stroke(number == nil ? Color(uiColor: .systemGray3) : Color.accentColor,
+                                 lineWidth: number == nil ? 1.5 : 2.5)
+                }
+            }
+            .contentShape(shape)
+            .onTapGesture { toggle(index) }
     }
 
     // MARK: - 区间
@@ -221,24 +306,29 @@ struct ContentView: View {
                 numberField(title: "止", text: $endText)
                 Button("全部") {
                     startText = "1"
-                    endText = "\(items.count)"
+                    endText = "\(selectedCount)"
                 }
                 .buttonStyle(.bordered)
             }
 
             if let start = startValue, let end = endValue {
                 let amount = abs(start - end) + 1
-                if start <= end {
-                    Text("正序：第 \(start) ~ \(end) 个，共 \(amount) 个，编号 1 从原第 \(start) 个开始")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("倒序：第 \(start) → \(end) 个，共 \(amount) 个；原第 \(start) 个编号 1，原第 \(end) 个编号 \(amount)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                let isReverse = start > end
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isReverse
+                         ? "倒序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递减）"
+                         : "正序：第 \(start) 个 → 第 \(end) 个，共 \(amount) 个（网格从左上往下读，编号递增）")
+                    Text("编号 1 = 第 \(start) 个（「起」那格），编号 \(amount) = 第 \(end) 个（「止」那格）")
+                    if hasBothKinds(in: start, end) {
+                        Text("图文混排：编号按交错后的最终位置定，所以网格里的数字不会严格 1、2、3 连排")
+                    }
                 }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             } else {
-                Text("起止数字都要在 1 ~ \(items.count) 之间（起 > 止 就是倒序编号）")
+                Text(selectedCount == 0
+                     ? "至少选 1 个素材（点格子恢复选取）"
+                     : "起止数字都要在 1 ~ \(selectedCount) 之间（起 > 止 就是倒序编号）")
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
@@ -246,6 +336,14 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func hasBothKinds(in start: Int, end: Int) -> Bool {
+        let lower = min(start, end)
+        let upper = max(start, end)
+        guard upper >= lower, upper <= selectedItems.count else { return false }
+        let slice = selectedItems[(lower - 1)...(upper - 1)]
+        return slice.contains { $0.kind == .image } && slice.contains { $0.kind == .video }
     }
 
     private func numberField(title: String, text: Binding<String>) -> some View {
@@ -268,15 +366,23 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("重排后的顺序").font(.headline)
 
-            if let plan = plan, !plan.entries.isEmpty {
+            if let plan = plan, !plan.entries.isEmpty, let start = startValue, let end = endValue {
                 Text((["分隔图"] + plan.entries.map { "\($0.number)·\($0.item.kind.short)" })
                     .joined(separator: " → "))
                     .font(.subheadline.monospacedDigit())
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("编号 1 的时间最新，相册从上往下读就是 1 → N")
-                    .font(.caption2)
+                let amount = plan.entries.count
+                Text(start <= end
+                     ? "正序：第 \(start) 个排最前（编号 1），第 \(end) 个排最后（编号 \(amount)）"
+                     : "倒序：第 \(start) 个排最前（编号 1），第 \(end) 个排最后（编号 \(amount)），第 \(start) 个在网格靠前、编号却最大")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("编号 1 的时间最新，相册从上往下读就是 1 → \(amount)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             } else {
                 Text("先填写有效的起止数字")
                     .font(.footnote)
@@ -290,6 +396,13 @@ struct ContentView: View {
 
     // MARK: - 底部按钮
 
+    private var bottomTitle: String {
+        if let plan = plan, !plan.entries.isEmpty {
+            return "重新排列（\(plan.entries.count) 个）"
+        }
+        return "重新排列"
+    }
+
     private var bottomBar: some View {
         VStack(spacing: 0) {
             Divider()
@@ -297,7 +410,7 @@ struct ContentView: View {
                 guard let plan = plan else { return }
                 Task { await runner.run(plan: plan) }
             } label: {
-                Text("重新排列")
+                Text(bottomTitle)
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
